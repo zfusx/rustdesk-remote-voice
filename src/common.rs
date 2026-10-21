@@ -2358,6 +2358,13 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 }
 
 pub fn load_custom_client() {
+    #[cfg(all(target_os = "windows", feature = "remote-cm-control"))]
+    config::DEFAULT_LOCAL_SETTINGS
+        .write()
+        .unwrap()
+        .entry(keys::OPTION_ALLOW_REMOTE_CM_MODIFICATION.to_owned())
+        .or_insert_with(|| "Y".to_owned());
+
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
@@ -2953,6 +2960,21 @@ mod tests {
         time::{interval, interval_at, sleep, Duration, Instant, Interval},
     };
     use std::collections::HashSet;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn remote_cm_control_build_default_and_override() {
+        load_custom_client();
+        let key = keys::OPTION_ALLOW_REMOTE_CM_MODIFICATION;
+        assert_eq!(
+            config::option2bool(key, &get_local_option(key)),
+            cfg!(feature = "remote-cm-control")
+        );
+        let overrides = &config::OVERWRITE_LOCAL_SETTINGS;
+        overrides.write().unwrap().insert(key.to_owned(), "N".to_owned());
+        assert!(!config::option2bool(key, &get_local_option(key)));
+        overrides.write().unwrap().remove(key);
+    }
 
     #[test]
     fn a_cursor_content_id_fits_a_web_client_number() {
