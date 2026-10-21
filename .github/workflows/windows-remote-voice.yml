@@ -1,6 +1,11 @@
 name: Windows remote voice client
 'on':
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      run_permission_test:
+        description: Run the permission regression test (already passed for packaging-only retries)
+        type: boolean
+        default: true
   push:
     branches:
     - codex/windows-voice-support
@@ -140,6 +145,23 @@ jobs:
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       with:
         submodules: recursive
+    - name: Prepare build information
+      run: |
+        New-Item -ItemType Directory -Force ./SignOutput | Out-Null
+        Copy-Item LICENCE ./SignOutput/LICENSE.txt
+        Copy-Item docs/remote-voice-build.md ./SignOutput/README.md
+        $revision = git rev-parse HEAD
+        $submodule = git -C libs/hbb_common rev-parse HEAD
+        @"
+        Source: https://github.com/$env:GITHUB_REPOSITORY/tree/$revision
+        RustDesk base: 1.5.0 (fada664df7a294d1d1a9ca3e7cd3637069122f17)
+        Source commit: $revision
+        hbb_common commit: $submodule
+        Platform: Windows x86_64
+        Features: flutter,hwcodec,vram,remote-cm-control
+        Default: allow-remote-cm-modification=Y (explicit N still takes precedence)
+        Authenticode: unsigned
+        "@ | Set-Content ./SignOutput/BUILD-INFO.txt
     - name: Restore bridge files
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
@@ -180,6 +202,7 @@ jobs:
     - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
       with:
         prefix-key: ${{ matrix.job.os }}
+        cache-on-failure: true
     - name: Setup vcpkg with Github Actions binary cache
       uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
       with:
@@ -206,6 +229,7 @@ jobs:
         head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
       shell: bash
     - name: Test custom permission default and explicit disable
+      if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_permission_test }}
       shell: bash
       run: |
         cargo test --locked --release --lib --features flutter,hwcodec,vram,remote-cm-control common::tests::remote_cm_control_build_default_and_override -- --exact
@@ -285,6 +309,7 @@ jobs:
       with:
         msbuild-architecture: x86
     - name: Build msi
+      id: build-msi
       run: |
         pushd ./res/msi
         python preprocess.py --arp -d ../../rustdesk
@@ -297,27 +322,14 @@ jobs:
         $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
         mv $msi.FullName ../../SignOutput/rustdesk-${{ env.VERSION }}-remote-voice-x86_64.msi
         sha256sum ../../SignOutput/rustdesk-*.msi
-    - name: Package build information and checksums
+    - name: Generate checksums
       run: |
-        Copy-Item LICENSE ./SignOutput/LICENSE.txt
-        Copy-Item docs/remote-voice-build.md ./SignOutput/README.md
-        $revision = git rev-parse HEAD
-        $submodule = git -C libs/hbb_common rev-parse HEAD
-        @"
-        Source: https://github.com/$env:GITHUB_REPOSITORY/tree/$revision
-        RustDesk base: 1.5.0 (fada664df7a294d1d1a9ca3e7cd3637069122f17)
-        Source commit: $revision
-        hbb_common commit: $submodule
-        Platform: Windows x86_64
-        Features: flutter,hwcodec,vram,remote-cm-control
-        Default: allow-remote-cm-modification=Y (explicit N still takes precedence)
-        Authenticode: unsigned
-        "@ | Set-Content ./SignOutput/BUILD-INFO.txt
         Get-ChildItem ./SignOutput -File | Where-Object { $_.Extension -in '.exe', '.msi' } | ForEach-Object {
           $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
           "$hash  $($_.Name)"
         } | Set-Content ./SignOutput/SHA256SUMS.txt
     - name: Upload Windows client
+      if: ${{ !cancelled() && steps.build-msi.outcome == 'success' }}
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: rustdesk-1.5.0-remote-voice-windows-x64

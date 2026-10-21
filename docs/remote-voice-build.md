@@ -49,7 +49,9 @@ Run the **Windows remote voice client** GitHub Actions workflow on the
 `codex/windows-voice-support` branch. It uses standard Ubuntu/Windows runners,
 pins the upstream 1.5.0 toolchain and dependencies, builds a Windows x64 client,
 runs the custom default/override regression test, and uploads an artifact.
-It does not publish a release or invoke a signing service.
+It does not publish a release or invoke a signing service. For a packaging-only
+retry after the test has passed with identical Rust sources, the manual workflow
+allows turning off `run_permission_test` to avoid repeating that compilation.
 
 For a Windows build environment set up like the workflow:
 
@@ -60,7 +62,7 @@ python build.py --portable --flutter --skip-cargo --skip-portable-pack --hwcodec
 
 The workflow additionally generates the Flutter bridge, packages the portable
 executable and MSI, and records checksums. Build artifacts are retained for 30 days.
-The repository and `LICENSE` provide the corresponding modified source under the
+The repository and `LICENCE` provide the corresponding modified source under the
 upstream GNU AGPL v3 license. Keep the license and corresponding source available
 when distributing this custom build.
 
